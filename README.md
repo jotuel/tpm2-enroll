@@ -1,4 +1,4 @@
-# `pam_bio_tpm2` - PAM Biometric support
+# `pam_bio_tpm2` & `tpm2-enroll`
 
 A Linux Pluggable Authentication Module and cli tool for biometric authentication (`fprintd` / `libfprint`) with TPM 2.0 sealed secret. This enables fingerprint authentication to automatically decrypt per-user encrypted home directories (`systemd-homed`, `pam_mount`, `fscrypt`, `ecryptfs`) and unlock GNOME Keyring / KWallet secret portals during login.
 
@@ -38,12 +38,12 @@ make
 sudo make install
 ```
 Installs:
-* `/lib/security/pam_bio_tpm2.so` (PAM Module)
-* `/usr/local/bin/pam-bio-tpm2-enroll` (Enrollment CLI)
-
+* `/lib/security/pam_bio_tpm2.so` 
+* `/usr/local/bin/tpm2-enroll`
+* 
 ### 2. Enroll Passphrase to TPM 2.0
 ```bash
-pam-bio-tpm2-enroll --user $USER
+tpm2-enroll --user $USER
 ```
 * Prompts for your home directory / keyring master passphrase.
 * Seals the passphrase into TPM 2.0 bound to PCR states (0, 4, 7, 11) and user account ID.
