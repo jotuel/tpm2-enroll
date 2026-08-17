@@ -8,6 +8,7 @@ ALL_CFLAGS := $(CFLAGS) $(PKG_CFLAGS) -Isrc
 
 LIB_TARGET := pam_bio_tpm2.so
 CLI_TARGET := tpm2-enroll
+CLI_UNENROLL := tpm2-unenroll
 
 COMMON_OBJS := build/tpm2_util.o build/fprint_util.o
 LIB_OBJS    := build/pam_bio_tpm2.o $(COMMON_OBJS)
@@ -18,7 +19,7 @@ BIN_DIR ?= /usr/local/bin
 
 .PHONY: all clean install uninstall test
 
-all: build/ $(LIB_TARGET) $(CLI_TARGET)
+all: build/ $(LIB_TARGET) $(CLI_TARGET) $(CLI_UNENROLL)
 
 build/:
 	mkdir -p build/
@@ -31,16 +32,25 @@ $(LIB_TARGET): $(LIB_OBJS)
 
 $(CLI_TARGET): $(CLI_OBJS)
 	$(CC) $(ALL_CFLAGS) -o $@ $(CLI_OBJS) $(PKG_LIBS)
+$(CLI_UNENROLL): $(CLI_TARGET)
+	ln -sf $(CLI_TARGET) $(CLI_UNENROLL)
+
 
 install: all
 	install -d $(DESTDIR)$(PAM_DIR)
 	install -m 0755 $(LIB_TARGET) $(DESTDIR)$(PAM_DIR)/$(LIB_TARGET)
 	install -d $(DESTDIR)$(BIN_DIR)
 	install -m 0755 $(CLI_TARGET) $(DESTDIR)$(BIN_DIR)/$(CLI_TARGET)
+	ln -sf $(CLI_TARGET) $(DESTDIR)$(BIN_DIR)/$(CLI_UNENROLL)
+	ln -sf $(CLI_TARGET) $(DESTDIR)$(BIN_DIR)/pam-bio-tpm2-enroll
+	ln -sf $(CLI_TARGET) $(DESTDIR)$(BIN_DIR)/pam-bio-tpm2-unenroll
 
 uninstall:
 	rm -f $(DESTDIR)$(PAM_DIR)/$(LIB_TARGET)
 	rm -f $(DESTDIR)$(BIN_DIR)/$(CLI_TARGET)
+	rm -f $(DESTDIR)$(BIN_DIR)/$(CLI_UNENROLL)
+	rm -f $(DESTDIR)$(BIN_DIR)/pam-bio-tpm2-enroll
+	rm -f $(DESTDIR)$(BIN_DIR)/pam-bio-tpm2-unenroll
 
 clean:
-	rm -rf build $(LIB_TARGET) $(CLI_TARGET)
+	rm -rf build $(LIB_TARGET) $(CLI_TARGET) $(CLI_UNENROLL)

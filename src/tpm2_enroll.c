@@ -10,13 +10,19 @@
 
 #include "tpm2_util.h"
 
-static void print_usage(const char *progname) {
+static void print_usage(const char *progname, bool unenroll_mode) {
     printf("Usage: %s [OPTIONS]\n\n", progname);
     printf("Options:\n");
     printf("  -u, --user USERNAME     Target username (default: current logged-in user)\n");
     printf("  -o, --out PATH          Output path for sealed TPM blob file\n");
-    printf("  -s, --skip-pcr          Skip TPM PCR 7 binding (for testing/development)\n");
-    printf("  -t, --test              Perform test unseal immediately after sealing\n");
+    if (unenroll_mode) {
+        printf("  -f, --force, -y, --yes  Skip confirmation prompt\n");
+    } else {
+        printf("  -s, --skip-pcr          Skip TPM PCR 7 binding (for testing/development)\n");
+        printf("  -t, --test              Perform test unseal immediately after sealing\n");
+        printf("  -w, --wipe, --unenroll  Wipe and remove existing enrolled TPM credentials\n");
+        printf("  -f, --force, -y, --yes  Skip confirmation prompt when wiping\n");
+    }
     printf("  -h, --help              Show this help message\n");
 }
 
@@ -60,18 +66,28 @@ int main(int argc, char **argv) {
     char *out_blob_path = NULL;
     bool skip_pcr = false;
     bool test_unseal = true;
+    bool force = false;
+    bool unenroll_mode = false;
+
+    if (argv[0] && strstr(argv[0], "unenroll") != NULL) {
+        unenroll_mode = true;
+    }
 
     static struct option long_options[] = {
         {"user",     required_argument, 0, 'u'},
         {"out",      required_argument, 0, 'o'},
         {"skip-pcr", no_argument,       0, 's'},
         {"test",     no_argument,       0, 't'},
+        {"wipe",     no_argument,       0, 'w'},
+        {"unenroll", no_argument,       0, 'w'},
+        {"force",    no_argument,       0, 'f'},
+        {"yes",      no_argument,       0, 'f'},
         {"help",     no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "u:o:sth", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "u:o:stwwfyh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'u':
                 username = strdup(optarg);
@@ -85,9 +101,16 @@ int main(int argc, char **argv) {
             case 't':
                 test_unseal = true;
                 break;
+            case 'w':
+                unenroll_mode = true;
+                break;
+            case 'f':
+            case 'y':
+                force = true;
+                break;
             case 'h':
             default:
-                print_usage(argv[0]);
+                print_usage(argv[0], unenroll_mode);
                 return 0;
         }
     }
@@ -113,6 +136,45 @@ int main(int argc, char **argv) {
         }
         out_blob_path = strdup(default_blob);
     }
+    if (unenroll_mode) {
+        printf("=== pam_bio_tpm2 Credentials Removal ===\n");
+        printf("Target User: %s\n", username);
+        printf("Blob Target: %s\n\n", out_blob_path);
+
+        if (access(out_blob_path, F_OK) != 0) {
+            printf("No sealed TPM credentials found at '%s'. Nothing to remove.\n", out_blob_path);
+            free(username);
+            free(out_blob_path);
+            return 0;
+        }
+
+        if (!force) {
+            printf("Are you sure you want to wipe sealed TPM credentials for '%s'? [y/N] ", username);
+            fflush(stdout);
+            char reply[32] = {0};
+            if (!fgets(reply, sizeof(reply), stdin) || (reply[0] != 'y' && reply[0] != 'Y')) {
+                printf("Operation canceled.\n");
+                free(username);
+                free(out_blob_path);
+                return 0;
+            }
+        }
+
+        int wipe_rc = tpm2_wipe_secret(username, out_blob_path);
+        if (wipe_rc != 0) {
+            fprintf(stderr, "Error: Failed to wipe sealed TPM blob (rc=%d: %s)\n",
+                    wipe_rc, strerror(-wipe_rc));
+            free(username);
+            free(out_blob_path);
+            return 1;
+        }
+
+        printf("Successfully wiped and removed sealed TPM 2.0 credentials at '%s'.\n", out_blob_path);
+        free(username);
+        free(out_blob_path);
+        return 0;
+    }
+
 
     printf("=== pam_bio_tpm2 Passphrase Enrollment ===\n");
     printf("Target User:      %s\n", username);

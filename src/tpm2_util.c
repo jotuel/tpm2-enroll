@@ -496,3 +496,55 @@ int tpm2_unseal_secret(const char *username,
 
     return 0;
 }
+
+int tpm2_wipe_secret(const char *username, const char *blob_path) {
+    char default_blob[512];
+    const char *target_path = blob_path;
+
+    if (!target_path) {
+        if (!username) return -EINVAL;
+        if (getuid() == 0) {
+            tpm2_get_default_blob_path(username, default_blob, sizeof(default_blob));
+        } else {
+            snprintf(default_blob, sizeof(default_blob), "%s/.config/pam_bio_tpm2/sealed.blob",
+                     getenv("HOME") ? getenv("HOME") : "/tmp");
+        }
+        target_path = default_blob;
+    }
+
+    struct stat st;
+    if (stat(target_path, &st) != 0) {
+        return -errno;
+    }
+
+    /* Overwrite file contents with zeroes before unlinking */
+    FILE *f = fopen(target_path, "r+b");
+    if (f) {
+        size_t file_size = st.st_size > 0 ? (size_t)st.st_size : 4096;
+        uint8_t zero_buf[1024] = {0};
+        size_t written = 0;
+        rewind(f);
+        while (written < file_size) {
+            size_t chunk = sizeof(zero_buf);
+            if (written + chunk > file_size) {
+                chunk = file_size - written;
+            }
+            if (fwrite(zero_buf, 1, chunk, f) != chunk) {
+                break;
+            }
+            written += chunk;
+        }
+        fflush(f);
+        int fd = fileno(f);
+        if (fd >= 0) {
+            fsync(fd);
+        }
+        fclose(f);
+    }
+
+    if (unlink(target_path) != 0) {
+        return -errno;
+    }
+
+    return 0;
+}

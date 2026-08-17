@@ -39,16 +39,23 @@ sudo make install
 ```
 Installs:
 * `/lib/security/pam_bio_tpm2.so` (PAM Module)
-* `/usr/local/bin/pam-bio-tpm2-enroll` (Enrollment CLI)
+* `/usr/local/bin/tpm2-enroll` / `pam-bio-tpm2-enroll` (Enrollment CLI)
+* `/usr/local/bin/tpm2-unenroll` / `pam-bio-tpm2-unenroll` (Removal CLI)
 
 ### 2. Enroll Passphrase to TPM 2.0
 ```bash
-pam-bio-tpm2-enroll --user $USER
+tpm2-enroll --user $USER
 ```
 * Prompts for your home directory / keyring master passphrase.
 * Seals the passphrase into TPM 2.0 bound to PCR 7 (Secure Boot state & certificates).
 
-### 3. Configure PAM
+### 3. Remove / Unenroll Passphrase (Optional)
+To securely wipe the sealed credentials:
+```bash
+tpm2-unenroll --user $USER
+# Or: tpm2-enroll --wipe --user $USER
+```
+### 4. Configure PAM
 Add `pam_bio_tpm2.so` before `pam_unix.so` and keyring/home modules in `/etc/pam.d/gdm-fingerprint` (or `/etc/pam.d/sddm` / `/etc/pam.d/system-auth`):
 
 ```ini

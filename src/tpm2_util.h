@@ -51,6 +51,15 @@ int tpm2_unseal_secret(const char *username,
  */
 void tpm2_get_default_blob_path(const char *username, char *out_buf, size_t buf_len);
 
+/**
+ * Securely wipes and removes a user's sealed TPM 2.0 blob file.
+ *
+ * @param username Target username.
+ * @param blob_path File path of the sealed data blob (or NULL for default).
+ * @return 0 on success, -ENOENT if not found, negative errno on failure.
+ */
+int tpm2_wipe_secret(const char *username, const char *blob_path);
+
 #ifdef __cplusplus
 }
 #endif

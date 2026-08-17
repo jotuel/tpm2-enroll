@@ -1,3 +1,4 @@
 build/
 tpm2-enroll
 pam_bio_tpm2.so
+tpm2-unenroll

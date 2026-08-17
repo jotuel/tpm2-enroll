@@ -106,11 +106,12 @@ If Secure Boot is disabled or modified certificates are used, PCR 7 changes and 
 1. **`pam_bio_tpm2.so`**: The shared PAM library placed in `/lib/security/`.
    - `pam_sm_authenticate`: Talks to `fprintd` D-Bus service, unseals TPM secret, sets `PAM_AUTHTOK`.
    - `pam_sm_open_session`: Cleans up transient state, ensures keyring synchronization.
-2. **`pam-bio-tpm2-enroll`**: Command-line administration tool.
-   - Enrolls user passphrase into TPM 2.0.
+2. **`tpm2-enroll` / `pam-bio-tpm2-enroll`**: Command-line enrollment tool.
+   - Enrolls user passphrase into TPM 2.0 bound to PCR 7 policy.
    - Saves sealed blob to `/var/lib/pam_bio_tpm2/<username>.blob` or `~/.config/pam_bio_tpm2/sealed.blob`.
-   - Verifies biometric enrollment status with `fprintd`.
-
+3. **`tpm2-unenroll` / `pam-bio-tpm2-unenroll`**: Command-line credential removal tool.
+   - Securely zeroes out and wipes the sealed TPM 2.0 blob file.
+   - Can also be invoked via `tpm2-enroll --wipe`.
 ---
 
 ## 5. Failure & Safety
