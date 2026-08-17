@@ -79,13 +79,84 @@ static int get_primary_key(ESYS_CONTEXT *esys_ctx, ESYS_TR *primary_handle) {
     }
     return 0;
 }
+static void get_pcr7_selection(TPML_PCR_SELECTION *pcr_selection) {
+    pcr_selection->count = 1;
+    pcr_selection->pcrSelections[0].hash = TPM2_ALG_SHA256;
+    pcr_selection->pcrSelections[0].sizeofSelect = 3;
+    pcr_selection->pcrSelections[0].pcrSelect[0] = 0x80; /* Bit 7 = PCR 7 */
+    pcr_selection->pcrSelections[0].pcrSelect[1] = 0x00;
+    pcr_selection->pcrSelections[0].pcrSelect[2] = 0x00;
+}
+
+static int create_pcr7_policy_digest(ESYS_CONTEXT *esys_ctx, TPM2B_DIGEST **out_policy_digest) {
+    ESYS_TR session = ESYS_TR_NONE;
+    TPMT_SYM_DEF symmetric = { .algorithm = TPM2_ALG_NULL };
+
+    TSS2_RC rc = Esys_StartAuthSession(
+        esys_ctx,
+        ESYS_TR_NONE,
+        ESYS_TR_NONE,
+        ESYS_TR_NONE,
+        ESYS_TR_NONE,
+        ESYS_TR_NONE,
+        NULL,
+        TPM2_SE_TRIAL,
+        &symmetric,
+        TPM2_ALG_SHA256,
+        &session
+    );
+    if (rc != TSS2_RC_SUCCESS) {
+        fprintf(stderr, "[pam_bio_tpm2] Esys_StartAuthSession (TRIAL) failed: 0x%x (%s)\n",
+                rc, Tss2_RC_Decode(rc));
+        return -1;
+    }
+
+    TPML_PCR_SELECTION pcr_selection;
+    get_pcr7_selection(&pcr_selection);
+    TPM2B_DIGEST pcr_digest = { .size = 0 };
+
+    rc = Esys_PolicyPCR(
+        esys_ctx,
+        session,
+        ESYS_TR_NONE,
+        ESYS_TR_NONE,
+        ESYS_TR_NONE,
+        &pcr_digest,
+        &pcr_selection
+    );
+    if (rc != TSS2_RC_SUCCESS) {
+        fprintf(stderr, "[pam_bio_tpm2] Esys_PolicyPCR (TRIAL) failed: 0x%x (%s)\n",
+                rc, Tss2_RC_Decode(rc));
+        Esys_FlushContext(esys_ctx, session);
+        return -1;
+    }
+
+    rc = Esys_PolicyGetDigest(
+        esys_ctx,
+        session,
+        ESYS_TR_NONE,
+        ESYS_TR_NONE,
+        ESYS_TR_NONE,
+        out_policy_digest
+    );
+    if (rc != TSS2_RC_SUCCESS) {
+        fprintf(stderr, "[pam_bio_tpm2] Esys_PolicyGetDigest failed: 0x%x (%s)\n",
+                rc, Tss2_RC_Decode(rc));
+        Esys_FlushContext(esys_ctx, session);
+        return -1;
+    }
+
+    Esys_FlushContext(esys_ctx, session);
+    return 0;
+}
+
 
 int tpm2_seal_secret(const char *username,
                      const char *passphrase,
                      size_t passphrase_len,
                      const char *out_blob_path,
                      bool skip_pcr) {
-    (void)skip_pcr;
+    /* skip_pcr: if false, binds object to PCR 7 policy */
     if (!username || !passphrase || passphrase_len == 0 || !out_blob_path) {
         return -EINVAL;
     }
@@ -123,8 +194,7 @@ int tpm2_seal_secret(const char *username,
             .type = TPM2_ALG_KEYEDHASH,
             .nameAlg = TPM2_ALG_SHA256,
             .objectAttributes = (TPMA_OBJECT_FIXEDTPM |
-                                 TPMA_OBJECT_FIXEDPARENT |
-                                 TPMA_OBJECT_USERWITHAUTH),
+                                 TPMA_OBJECT_FIXEDPARENT),
             .authPolicy = { .size = 0 },
             .parameters = {
                 .keyedHashDetail = {
@@ -134,6 +204,19 @@ int tpm2_seal_secret(const char *username,
             .unique = { .keyedHash = { .size = 0 } }
         }
     };
+    TPM2B_DIGEST *policy_digest = NULL;
+    if (!skip_pcr) {
+        if (create_pcr7_policy_digest(esys_ctx, &policy_digest) != 0) {
+            Esys_FlushContext(esys_ctx, primary_handle);
+            Esys_Finalize(&esys_ctx);
+            return -EIO;
+        }
+        in_public.publicArea.authPolicy = *policy_digest;
+        Esys_Free(policy_digest);
+    } else {
+        in_public.publicArea.objectAttributes |= TPMA_OBJECT_USERWITHAUTH;
+    }
+
 
     TPM2B_DATA outside_info = { .size = 0 };
     TPML_PCR_SELECTION creation_pcr = { .count = 0 };
@@ -236,7 +319,7 @@ int tpm2_unseal_secret(const char *username,
                        size_t max_len,
                        size_t *out_len,
                        bool skip_pcr) {
-    (void)skip_pcr;
+    /* skip_pcr: if false, evaluates PCR 7 policy session */
     if (!username || !blob_path || !out_passphrase || max_len == 0) {
         return -EINVAL;
     }
@@ -320,15 +403,68 @@ int tpm2_unseal_secret(const char *username,
         return -EIO;
     }
 
+    ESYS_TR auth_session = ESYS_TR_PASSWORD;
+    if (!skip_pcr) {
+        TPMT_SYM_DEF symmetric = { .algorithm = TPM2_ALG_NULL };
+        rc = Esys_StartAuthSession(
+            esys_ctx,
+            ESYS_TR_NONE,
+            ESYS_TR_NONE,
+            ESYS_TR_NONE,
+            ESYS_TR_NONE,
+            ESYS_TR_NONE,
+            NULL,
+            TPM2_SE_POLICY,
+            &symmetric,
+            TPM2_ALG_SHA256,
+            &auth_session
+        );
+        if (rc != TSS2_RC_SUCCESS) {
+            fprintf(stderr, "[pam_bio_tpm2] Esys_StartAuthSession (POLICY) failed: 0x%x (%s)\n",
+                    rc, Tss2_RC_Decode(rc));
+            Esys_FlushContext(esys_ctx, object_handle);
+            Esys_FlushContext(esys_ctx, primary_handle);
+            Esys_Finalize(&esys_ctx);
+            return -EIO;
+        }
+
+        TPML_PCR_SELECTION pcr_selection;
+        get_pcr7_selection(&pcr_selection);
+        TPM2B_DIGEST pcr_digest = { .size = 0 };
+
+        rc = Esys_PolicyPCR(
+            esys_ctx,
+            auth_session,
+            ESYS_TR_NONE,
+            ESYS_TR_NONE,
+            ESYS_TR_NONE,
+            &pcr_digest,
+            &pcr_selection
+        );
+        if (rc != TSS2_RC_SUCCESS) {
+            fprintf(stderr, "[pam_bio_tpm2] Esys_PolicyPCR (POLICY) failed: 0x%x (%s)\n",
+                    rc, Tss2_RC_Decode(rc));
+            Esys_FlushContext(esys_ctx, auth_session);
+            Esys_FlushContext(esys_ctx, object_handle);
+            Esys_FlushContext(esys_ctx, primary_handle);
+            Esys_Finalize(&esys_ctx);
+            return -EACCES;
+        }
+    }
+
     TPM2B_SENSITIVE_DATA *unsealed_data = NULL;
     rc = Esys_Unseal(
         esys_ctx,
         object_handle,
-        ESYS_TR_PASSWORD,
+        auth_session,
         ESYS_TR_NONE,
         ESYS_TR_NONE,
         &unsealed_data
     );
+
+    if (auth_session != ESYS_TR_PASSWORD && auth_session != ESYS_TR_NONE) {
+        Esys_FlushContext(esys_ctx, auth_session);
+    }
 
     if (rc != TSS2_RC_SUCCESS) {
         fprintf(stderr, "[pam_bio_tpm2] Esys_Unseal failed: 0x%x (%s)\n",

@@ -15,7 +15,7 @@ extern "C" {
  * @param passphrase Secret passphrase to seal.
  * @param passphrase_len Length of the passphrase.
  * @param out_blob_path File path where the sealed data blob will be written.
- * @param skip_pcr If true, skip PCR binding (useful for testing or non-boot-bound environments).
+ * @param skip_pcr If true, skip PCR 7 binding (useful for testing or non-boot-bound environments).
  * @return 0 on success, negative error code on failure.
  */
 int tpm2_seal_secret(const char *username,
@@ -32,7 +32,7 @@ int tpm2_seal_secret(const char *username,
  * @param out_passphrase Output buffer to receive the unsealed passphrase.
  * @param max_len Maximum capacity of out_passphrase buffer.
  * @param out_len Pointer to store actual length of unsealed passphrase.
- * @param skip_pcr If true, skip PCR policy calculation during unseal.
+ * @param skip_pcr If true, skip PCR 7 policy session during unseal.
  * @return 0 on success, negative error code on failure.
  */
 int tpm2_unseal_secret(const char *username,

@@ -15,7 +15,7 @@ static void print_usage(const char *progname) {
     printf("Options:\n");
     printf("  -u, --user USERNAME     Target username (default: current logged-in user)\n");
     printf("  -o, --out PATH          Output path for sealed TPM blob file\n");
-    printf("  -s, --skip-pcr          Skip TPM PCR binding (for testing/development)\n");
+    printf("  -s, --skip-pcr          Skip TPM PCR 7 binding (for testing/development)\n");
     printf("  -t, --test              Perform test unseal immediately after sealing\n");
     printf("  -h, --help              Show this help message\n");
 }
@@ -117,7 +117,7 @@ int main(int argc, char **argv) {
     printf("=== pam_bio_tpm2 Passphrase Enrollment ===\n");
     printf("Target User:      %s\n", username);
     printf("Sealed Blob Output: %s\n", out_blob_path);
-    printf("PCR Binding:      %s\n\n", skip_pcr ? "Disabled" : "Enabled (PCRs 0, 4, 7, 11)");
+    printf("PCR Binding:      %s\n\n", skip_pcr ? "Disabled" : "Enabled (PCR 7 - Secure Boot)");
 
     char *pass1 = get_input_passphrase("Enter user master passphrase (LUKS / Homed / Keyring secret): ");
     if (!pass1 || strlen(pass1) == 0) {

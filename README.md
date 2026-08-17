@@ -24,7 +24,7 @@ Standard symmetric encryption requires a secret passphrase to derive decryption 
 | **Match Location** | Secure enclave hardware token | `fprintd` background daemon |
 | **Key Derivation** | On-chip `hmac-secret` | TPM 2.0 NV/Object unseal |
 | **Custom Code Needed** | None  | Required |
-| **Boot Integrity Protection** | Protected by PIN / Biometric match | Bound to TPM 2.0 PCRs (0, 4, 7, 11) |
+| **Boot Integrity Protection** | Protected by PIN / Biometric match | Bound to TPM 2.0 PCR 7 (Secure Boot) |
 | **Per-User Home Support** | Native `systemd-homed` LUKS | `systemd-homed`, `pam_mount`, `fscrypt`, `ecryptfs` |
 | **Detailed Spec** | [See `docs/FIDO2.md`](docs/FIDO2.md) | [See `docs/TPM2.md`](docs/TPM2.md) |
 
@@ -46,7 +46,7 @@ Installs:
 pam-bio-tpm2-enroll --user $USER
 ```
 * Prompts for your home directory / keyring master passphrase.
-* Seals the passphrase into TPM 2.0 bound to PCR states (0, 4, 7, 11) and user account ID.
+* Seals the passphrase into TPM 2.0 bound to PCR 7 (Secure Boot state & certificates).
 
 ### 3. Configure PAM
 Add `pam_bio_tpm2.so` before `pam_unix.so` and keyring/home modules in `/etc/pam.d/gdm-fingerprint` (or `/etc/pam.d/sddm` / `/etc/pam.d/system-auth`):
@@ -81,5 +81,6 @@ session     optional      pam_gnome_keyring.so auto_start
 ## Security Model & Guarantees
 
 1. **Secure Memory Management:** Unsealed secrets are held in `mlock()`ed buffers and scrubbed via `explicit_bzero()`.
-2. **Boot State Binding:** Sealed TPM objects require matching PCR values (0, 4, 7, 11). If an attacker tampers with UEFI, bootloader, kernel, or kernel command line parameters, TPM refuses to unseal the passphrase.
-3. **Graceful Fallback:** If fingerprint verification fails or TPM PCR checks fail (e.g. after a kernel upgrade), `pam_bio_tpm2.so` returns `PAM_AUTH_ERR`, prompting PAM to fall back cleanly to traditional password entry.
+2. **Boot State Binding:** Sealed TPM objects require matching PCR 7 value. If an attacker disables Secure Boot or boots an untrusted/tampered binary not signed by an enrolled Secure Boot key, the TPM refuses to unseal the passphrase.
+3. **Resilient to Updates:** Because the policy is bound to PCR 7 (Secure Boot state and certificates) rather than raw bootloader/kernel hashes (PCR 4 / 11), bootloader and kernel updates (e.g. via `systemd-boot-update.service` and `sbctl`) continue to unlock seamlessly without manual re-enrollment.
+4. **Graceful Fallback:** If fingerprint verification fails or TPM PCR checks fail (e.g. if Secure Boot is disabled or tampered with), `pam_bio_tpm2.so` returns `PAM_AUTH_ERR`, prompting PAM to fall back cleanly to traditional password entry.

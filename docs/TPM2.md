@@ -34,7 +34,7 @@ When a user touches the sensor:
  ┌──────────────────────────────────────────────────────────┐
  │ 3. Create TPM 2.0 Primary Key                            |
  │ 4. Create Sealed Key Object containing Master Passphrase │
- │ 5. Bind Policy to PCR 0, 4, 7, 11 (Boot Integrity)       │
+ │ 5. Bind Policy to PCR 7 (Secure Boot Integrity)           │
  │ 6. Write Sealed Blob to persistent storage (~/.tpm2_bio) │
  └──────────────────────────────────────────────────────────┘
 ```
@@ -56,7 +56,7 @@ When a user touches the sensor:
             v                                     v
 +-----------------------+             +------------------------+
 | fprintd D-Bus Verify  |             | Read System TPM 2.0    |
-| (Verify user finger)  |             | PCR States (0,4,7,11)  |
+| (Verify user finger)  |             | PCR State (PCR 7)      |
 +-----------+-----------+             +-----------+------------+
             |                                     |
             +------------------+------------------+
@@ -87,18 +87,19 @@ When a user touches the sensor:
 
 ## 3. PCR Binding Policy
 
-To prevent evil maid attacks the TPM object is bound to PCRs:
+To prevent evil maid attacks while maintaining resilience across system updates, the TPM object is bound to **PCR 7**:
 
 | PCR Index | Description | Security Function |
 | :---: | :--- | :--- |
-| **0** | Core System Firmware | BIOS/UEFI firmware tampering |
-| **4** | Boot Manager & Master Boot Record | Bootloader hijacking |
-| **7** | Secure Boot State & Certificates | Disabling Secure Boot |
-| **11** | `systemd-stub` UKI / initrd | Tampered Kernel & initrd images |
+| **7** | Secure Boot State & Certificates | Enforces Secure Boot; blocks untrusted kernels, bootloaders, or disabled Secure Boot |
 
-If any measurement changes the TPM 2.0 chip refuses to unseal the secret.
+### Why PCR 7 (and not PCR 0, 4, 11)?
 
----
+* **PCR 0 / 4 / 11** record exact binary hashes of the UEFI firmware, bootloader (`systemd-bootx64.efi`), and kernel image. Whenever `systemd-boot-update.service` or kernel updates are applied, these measurements change, breaking auto-unseal and requiring manual re-enrollment.
+* **PCR 7** measures the **Secure Boot enforcement state and authorized certificate database (`PK`, `KEK`, `db`, `dbx`)**, rather than volatile binary hashes.
+* With tools like `sbctl` automatically signing new bootloader and kernel binaries, **PCR 7 remains constant across system updates** while guaranteeing that any unsigned, tampered, or evil maid bootloader cannot unseal the secret.
+
+If Secure Boot is disabled or modified certificates are used, PCR 7 changes and the TPM 2.0 chip refuses to unseal the secret.
 
 ## 4. Components
 
@@ -117,10 +118,10 @@ If any measurement changes the TPM 2.0 chip refuses to unseal the secret.
 1. **Fingerprint Rejection / Timeout:**
    - PAM returns `PAM_AUTH_ERR`.
    - Control passes down to `pam_unix.so` for standard password entry.
-2. **TPM PCR Mismatch (Kernel / Firmware Updates):**
+2. **TPM PCR Mismatch (Secure Boot Disabled / Tampered Certificates):**
    - TPM 2.0 returns `TSS2_ESYS_RC_POLICY_FAIL`.
    - `pam_bio_tpm2.so` catches error, logs warning via `pam_syslog()`, and triggers password fallback.
-   - User re-runs `pam-bio-tpm2-enroll` after update to re-bind to new PCR state.
+   - User can authenticate with standard password; secret remains protected.
 3. **Memory Safety:**
    - Secrets allocated with `mlock()` to prevent paging to swap disk.
    - Buffers zeroed with `explicit_bzero()`.
