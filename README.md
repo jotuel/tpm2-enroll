@@ -16,9 +16,9 @@ Standard symmetric encryption requires a secret passphrase to derive decryption 
 
 ---
 
-## Comparison of Architectural Approaches
+## `FIDO` vs `TPM2.0`
 
-| Feature | `systemd-homed` + FIDO2 Match-on-Chip | Host Fingerprint (`libfprint`) + TPM 2.0 Secret |
+| Feature | `systemd-homed` + FIDO2 Match-on-Chip | `libfprint` + TPM 2.0 Secret |
 | :---: | :--- | :--- |
 | **Hardware Required** | FIDO2 token with biometric reader | Fingerprint reader + TPM 2.0 |
 | **Match Location** | Secure enclave hardware token | `fprintd` background daemon |
@@ -30,7 +30,7 @@ Standard symmetric encryption requires a secret passphrase to derive decryption 
 
 ---
 
-## Quick Start (Approach 2)
+## Quick Start
 
 ### 1. Build and Install
 ```bash
@@ -78,8 +78,3 @@ session     optional      pam_gnome_keyring.so auto_start
 
 ---
 
-## Security Model & Guarantees
-
-1. **Secure Memory Management:** Unsealed secrets are held in `mlock()`ed buffers and scrubbed via `explicit_bzero()`.
-2. **Boot State Binding:** Sealed TPM objects require matching PCR values (0, 4, 7, 11). If an attacker tampers with UEFI, bootloader, kernel, or kernel command line parameters, TPM refuses to unseal the passphrase.
-3. **Graceful Fallback:** If fingerprint verification fails or TPM PCR checks fail (e.g. after a kernel upgrade), `pam_bio_tpm2.so` returns `PAM_AUTH_ERR`, prompting PAM to fall back cleanly to traditional password entry.
