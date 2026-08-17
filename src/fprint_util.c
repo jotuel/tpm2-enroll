@@ -9,8 +9,8 @@ typedef struct {
     GMainLoop *loop;
     int result;
     bool debug;
+    guint timer_id;
 } verify_data_t;
-
 static void on_verify_status_signal(GDBusConnection *connection,
                                    const gchar *sender_name,
                                    const gchar *object_path,
@@ -59,6 +59,7 @@ static gboolean on_timeout(gpointer user_data) {
         fprintf(stderr, "[pam_bio_tpm2] fprintd verification timed out.\n");
     }
     vd->result = -ETIMEDOUT;
+    vd->timer_id = 0; /* Cleared automatically by G_SOURCE_REMOVE */
     if (g_main_loop_is_running(vd->loop)) {
         g_main_loop_quit(vd->loop);
     }
@@ -123,8 +124,18 @@ int fprint_verify_user(const char *username, int timeout_seconds, bool debug) {
         return -1;
     }
 
-    const gchar *dev_path = NULL;
-    g_variant_get(res, "(&o)", &dev_path);
+    gchar *dev_path = NULL;
+    g_variant_get(res, "(o)", &dev_path);
+    g_variant_unref(res);
+    g_object_unref(manager_proxy);
+
+    if (!dev_path) {
+        if (debug) {
+            fprintf(stderr, "[pam_bio_tpm2] Failed to parse device path from fprintd\n");
+        }
+        g_object_unref(bus);
+        return -1;
+    }
 
     GDBusProxy *dev_proxy = g_dbus_proxy_new_sync(
         bus,
@@ -137,11 +148,9 @@ int fprint_verify_user(const char *username, int timeout_seconds, bool debug) {
         &error
     );
 
-    g_variant_unref(res);
-    g_object_unref(manager_proxy);
-
     if (!dev_proxy) {
         if (error) g_error_free(error);
+        g_free(dev_path);
         g_object_unref(bus);
         return -1;
     }
@@ -163,6 +172,7 @@ int fprint_verify_user(const char *username, int timeout_seconds, bool debug) {
                     username, error ? error->message : "unknown");
         }
         if (error) g_error_free(error);
+        g_free(dev_path);
         g_object_unref(dev_proxy);
         g_object_unref(bus);
         return -1;
@@ -173,9 +183,9 @@ int fprint_verify_user(const char *username, int timeout_seconds, bool debug) {
     verify_data_t vd = {
         .loop = g_main_loop_new(NULL, FALSE),
         .result = -1,
-        .debug = debug
+        .debug = debug,
+        .timer_id = 0
     };
-
     guint sub_id = g_dbus_connection_signal_subscribe(
         bus,
         "net.reactivated.Fprint",
@@ -206,8 +216,11 @@ int fprint_verify_user(const char *username, int timeout_seconds, bool debug) {
                     error ? error->message : "unknown");
         }
         if (error) g_error_free(error);
-        g_dbus_connection_signal_unsubscribe(bus, sub_id);
+        if (sub_id > 0) {
+            g_dbus_connection_signal_unsubscribe(bus, sub_id);
+        }
         g_dbus_proxy_call_sync(dev_proxy, "Release", NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL);
+        g_free(dev_path);
         g_object_unref(dev_proxy);
         g_main_loop_unref(vd.loop);
         g_object_unref(bus);
@@ -216,19 +229,25 @@ int fprint_verify_user(const char *username, int timeout_seconds, bool debug) {
     g_variant_unref(res);
 
     /* Set timeout timer */
-    guint timer_id = g_timeout_add_seconds(timeout_seconds, on_timeout, &vd);
+    vd.timer_id = g_timeout_add_seconds(timeout_seconds, on_timeout, &vd);
 
     /* Run GLib main loop until signal received or timeout */
     g_main_loop_run(vd.loop);
 
     /* Cleanup timer and signal subscription */
-    g_source_remove(timer_id);
-    g_dbus_connection_signal_unsubscribe(bus, sub_id);
+    if (vd.timer_id > 0) {
+        g_source_remove(vd.timer_id);
+        vd.timer_id = 0;
+    }
+    if (sub_id > 0) {
+        g_dbus_connection_signal_unsubscribe(bus, sub_id);
+    }
 
     /* Stop Verification and Release Device */
     g_dbus_proxy_call_sync(dev_proxy, "VerifyStop", NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL);
     g_dbus_proxy_call_sync(dev_proxy, "Release", NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL);
 
+    g_free(dev_path);
     g_main_loop_unref(vd.loop);
     g_object_unref(dev_proxy);
     g_object_unref(bus);
