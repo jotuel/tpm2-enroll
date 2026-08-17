@@ -42,8 +42,8 @@ install: all
 	install -d $(DESTDIR)$(BIN_DIR)
 	install -m 0755 $(CLI_TARGET) $(DESTDIR)$(BIN_DIR)/$(CLI_TARGET)
 	ln -sf $(CLI_TARGET) $(DESTDIR)$(BIN_DIR)/$(CLI_UNENROLL)
-	ln -sf $(CLI_TARGET) $(DESTDIR)$(BIN_DIR)/tpm2-enroll
-	ln -sf $(CLI_TARGET) $(DESTDIR)$(BIN_DIR)/tpm2-unenroll
+	ln -sf $(CLI_TARGET) $(DESTDIR)$(BIN_DIR)/pam-bio-tpm2-enroll
+	ln -sf $(CLI_TARGET) $(DESTDIR)$(BIN_DIR)/pam-bio-tpm2-unenroll
 
 uninstall:
 	rm -f $(DESTDIR)$(PAM_DIR)/$(LIB_TARGET)
