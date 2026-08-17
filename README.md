@@ -1,4 +1,4 @@
-# `pam_bio_tpm2` - PAM Biometric support
+# `pam_bio_tpm2` & `tpm2-enroll`
 
 A Linux Pluggable Authentication Module and cli tool for biometric authentication (`fprintd` / `libfprint`) with TPM 2.0 sealed secret. This enables fingerprint authentication to automatically decrypt per-user encrypted home directories (`systemd-homed`, `pam_mount`, `fscrypt`, `ecryptfs`) and unlock GNOME Keyring / KWallet secret portals during login.
 
@@ -16,9 +16,9 @@ Standard symmetric encryption requires a secret passphrase to derive decryption 
 
 ---
 
-## Comparison of Architectural Approaches
+## `FIDO` vs `TPM2.0`
 
-| Feature | `systemd-homed` + FIDO2 Match-on-Chip | Host Fingerprint (`libfprint`) + TPM 2.0 Secret |
+| Feature | `systemd-homed` + FIDO2 Match-on-Chip | `libfprint` + TPM 2.0 Secret |
 | :---: | :--- | :--- |
 | **Hardware Required** | FIDO2 token with biometric reader | Fingerprint reader + TPM 2.0 |
 | **Match Location** | Secure enclave hardware token | `fprintd` background daemon |
@@ -30,7 +30,7 @@ Standard symmetric encryption requires a secret passphrase to derive decryption 
 
 ---
 
-## Quick Start (Approach 2)
+## Quick Start
 
 ### 1. Build and Install
 ```bash
@@ -38,10 +38,16 @@ make
 sudo make install
 ```
 Installs:
+<<<<<<< HEAD
 * `/lib/security/pam_bio_tpm2.so` (PAM Module)
 * `/usr/local/bin/tpm2-enroll` / `pam-bio-tpm2-enroll` (Enrollment CLI)
 * `/usr/local/bin/tpm2-unenroll` / `pam-bio-tpm2-unenroll` (Removal CLI)
 
+=======
+* `/lib/security/pam_bio_tpm2.so` 
+* `/usr/local/bin/tpm2-enroll`
+* 
+>>>>>>> a18a070844cfd4d1b0d21a31cb6659a6f6bc7dc0
 ### 2. Enroll Passphrase to TPM 2.0
 ```bash
 tpm2-enroll --user $USER
@@ -85,9 +91,3 @@ session     optional      pam_gnome_keyring.so auto_start
 
 ---
 
-## Security Model & Guarantees
-
-1. **Secure Memory Management:** Unsealed secrets are held in `mlock()`ed buffers and scrubbed via `explicit_bzero()`.
-2. **Boot State Binding:** Sealed TPM objects require matching PCR 7 value. If an attacker disables Secure Boot or boots an untrusted/tampered binary not signed by an enrolled Secure Boot key, the TPM refuses to unseal the passphrase.
-3. **Resilient to Updates:** Because the policy is bound to PCR 7 (Secure Boot state and certificates) rather than raw bootloader/kernel hashes (PCR 4 / 11), bootloader and kernel updates (e.g. via `systemd-boot-update.service` and `sbctl`) continue to unlock seamlessly without manual re-enrollment.
-4. **Graceful Fallback:** If fingerprint verification fails or TPM PCR checks fail (e.g. if Secure Boot is disabled or tampered with), `pam_bio_tpm2.so` returns `PAM_AUTH_ERR`, prompting PAM to fall back cleanly to traditional password entry.
